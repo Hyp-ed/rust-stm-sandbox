@@ -1,0 +1,16 @@
+[package]
+name = "rust-mqttclient"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mqrstt = { version = "0.2.2", default-features = false, features = ["tokio"]}
+
+tokio = { version = "1.26.0", features = ["rt-multi-thread", "rt", "macros", "sync", "io-util", "net", "time"] }
+tokio-rustls = "0.24.0"
+
+async-trait = "0.1.68"
+
+rustls-pemfile = { version = "1.0.1" }
+webpki = { version = "0.22.0" }
+bytes = "1.6.0"
