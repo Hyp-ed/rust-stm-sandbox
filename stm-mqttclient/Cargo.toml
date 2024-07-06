@@ -22,7 +22,7 @@ cortex-m = { version = "0.7.6", features = ["inline-asm", "critical-section-sing
 cortex-m-rt = "0.7.0"
 embedded-hal = "0.2.6"
 panic-probe = { version = "0.3", features = ["print-defmt"] }
-heapless = { version = "0.8", default-features = false }
+heapless = { version = "0.8", default-features = false, features = ["serde"]}
 nb = "1.0.0"
 rand_core = "0.6.3"
 critical-section = "1.1"
@@ -33,6 +33,9 @@ hmac = "0.12.1"
 aes-gcm = {version = "0.10.3", default-features = false, features = ["aes", "heapless"] }
 
 rust-mqtt = { version = "0.3.0", default-features = false, features = ["defmt"] }
+
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde-json-core = "0.1.0"
 
 [profile.release]
 debug = 2
