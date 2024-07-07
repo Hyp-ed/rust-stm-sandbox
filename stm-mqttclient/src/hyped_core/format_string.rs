@@ -1,5 +1,6 @@
 use core::cmp::min;
 use core::fmt;
+use defmt::error;
 
 pub struct FormatString<'a> {
     buffer: &'a mut [u8],
@@ -16,9 +17,10 @@ impl<'a> FormatString<'a> {
     pub fn as_str(self) -> Option<&'a str> {
         if self.used <= self.buffer.len() {
             // only successful concats of str - must be a valid str.
-            use core::str::from_utf8_unchecked;
-            Some(unsafe { from_utf8_unchecked(&self.buffer[..self.used]) })
+            use core::str::from_utf8;
+            Some(from_utf8(&self.buffer[..self.used]).unwrap())
         } else {
+            error!("FormatString buffer overflow");
             None
         }
     }
