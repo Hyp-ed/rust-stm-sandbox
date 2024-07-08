@@ -21,6 +21,7 @@ pub fn initialise_mqtt_config() -> ClientConfig<'static, 5, CountingRng> {
     config.add_max_subscribe_qos(rust_mqtt::packet::v5::publish_packet::QualityOfService::QoS1);
     config.add_client_id("stm-client");
     config.max_packet_size = 100;
+
     config
 }
 
