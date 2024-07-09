@@ -22,12 +22,13 @@ use static_cell::StaticCell;
 use heapless::String;
 use rust_mqtt::client::client::MqttClient;
 use serde::*;
-use typenum::consts::*;
+use typenum::{consts::*, uint};
 
 mod hyped_core;
 use hyped_core::{
     format_string,
     logger::{LogLevel, LogTarget, Logger},
+    mqtt,
 };
 
 use hyped_core::{
@@ -42,6 +43,7 @@ bind_interrupts!(struct Irqs {
 #[derive(Serialize, Deserialize)]
 struct MQTTMessage {
     topic: String<48>,
+    task_id: u8,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -65,11 +67,102 @@ async fn button_task(pin: AnyPin) {
             .send(ButtonMqttMessage {
                 header: MQTTMessage {
                     topic: MqttTopics::to_string(&MqttTopics::Acceleration),
+                    task_id: 0,
                 },
                 status: button.is_high(),
             })
             .await;
-        Timer::after(Duration::from_millis(1000)).await;
+        Timer::after(Duration::from_millis(200)).await;
+    }
+}
+
+#[embassy_executor::task]
+async fn five_seconds_task() {
+    loop {
+        CHANNEL
+            .send(ButtonMqttMessage {
+                header: MQTTMessage {
+                    topic: MqttTopics::to_string(&MqttTopics::Acceleration),
+                    task_id: 2,
+                },
+                status: false,
+            })
+            .await;
+        Timer::after(Duration::from_secs(5)).await;
+    }
+}
+
+#[embassy_executor::task]
+async fn mqtt_task(mut socket: TcpSocket<'static>) {
+    // logger.log(LogLevel::Info, "Connecting...");
+    info!("Connecting...");
+    match socket
+        .connect((Ipv4Address::new(169, 254, 195, 141), 1883))
+        .await
+    {
+        Ok(()) => {
+            // logger.log(LogLevel::Info, "Connected!"),
+            info!("Connected!")
+        }
+        Err(connection_error) => {
+            //logger.log(
+            // LogLevel::Error,
+            // format_string::show(
+            //     &mut log_buffer,
+            //     format_args!("Error connecting: {:?}", connection_error),
+            // )
+            // .unwrap(),
+            info!("Error connecting: {:?}", connection_error)
+        }
+    };
+
+    let config = initialise_mqtt_config();
+    let mut recv_buffer = [0; 1024];
+    let mut write_buffer = [0; 1024];
+    let client = MqttClient::<_, 5, _>::new(
+        socket,
+        &mut write_buffer,
+        1024,
+        &mut recv_buffer,
+        1024,
+        config,
+    );
+    let mut mqtt_client = HypedMqttClient { client };
+
+    match mqtt_client.connect_to_broker().await {
+        Ok(()) => {
+            // logger.log(LogLevel::Info, "Connected!"),
+            info!("Connected!")
+        }
+        Err(connection_error) => {
+            //logger.log(
+            // LogLevel::Error,
+            // format_string::show(
+            //     &mut log_buffer,
+            //     format_args!("Error connecting: {:?}", connection_error),
+            // )
+            // .unwrap(),
+            info!("Error connecting: {:?}", connection_error)
+        }
+    }
+
+    mqtt_client.subscribe("command_sender").await;
+
+    loop {
+        while !CHANNEL.is_empty() {
+            let message = CHANNEL.receive().await;
+            let serialized_message =
+                serde_json_core::to_string::<U512, ButtonMqttMessage>(&message).unwrap();
+
+            mqtt_client
+                .send_message(
+                    message.header.topic.as_str(),
+                    serialized_message.as_bytes(),
+                    true,
+                )
+                .await;
+        }
+        Timer::after(Duration::from_millis(200)).await;
     }
 }
 
@@ -102,7 +195,7 @@ async fn main(spawner: Spawner) -> ! {
     logger.log(LogLevel::Info, "Hello World!");
 
     let seed: u64 = 0xdeadbeef;
-    let mac_addr = [0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF];
+    let mac_addr: [u8; 6] = [0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF];
 
     static PACKETS: StaticCell<PacketQueue<4, 4>> = StaticCell::new();
     let device = Ethernet::new(
@@ -146,71 +239,23 @@ async fn main(spawner: Spawner) -> ! {
     stack.wait_config_up().await;
 
     logger.log(LogLevel::Info, "Network stack initialized");
-
-    // Then we can use it!
-    let mut socket_rx_buffer = [0; 4096];
-    let mut socket_tx_buffer = [0; 4096];
-    let mut log_buffer = [0; 1024];
+    static mut SOCKET_RX_BUFFER: [u8; 4096] = [0; 4096];
+    static mut SOCKET_TX_BUFFER: [u8; 4096] = [0; 4096];
+    let mut socket =
+        unsafe { TcpSocket::new(&stack, &mut SOCKET_RX_BUFFER, &mut SOCKET_TX_BUFFER) };
+    socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
+    unwrap!(spawner.spawn(mqtt_task(socket)));
+    unwrap!(spawner.spawn(five_seconds_task()));
     loop {
-        let mut socket = TcpSocket::new(&stack, &mut socket_rx_buffer, &mut socket_tx_buffer);
-        socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
-
-        logger.log(LogLevel::Info, "Connecting...");
-        match socket
-            .connect((Ipv4Address::new(169, 254, 195, 141), 1883))
-            .await
-        {
-            Ok(()) => logger.log(LogLevel::Info, "Connected!"),
-            Err(connection_error) => logger.log(
-                LogLevel::Error,
-                format_string::show(
-                    &mut log_buffer,
-                    format_args!("Error connecting: {:?}", connection_error),
-                )
-                .unwrap(),
-            ),
-        };
-
-        let config = initialise_mqtt_config();
-        let mut recv_buffer = [0; 1024];
-        let mut write_buffer = [0; 1024];
-        let client = MqttClient::<_, 5, _>::new(
-            socket,
-            &mut write_buffer,
-            1024,
-            &mut recv_buffer,
-            1024,
-            config,
-        );
-        let mut mqtt_client = HypedMqttClient { client };
-
-        match mqtt_client.connect_to_broker().await {
-            Ok(()) => info!("Connected to MQTT Broker"),
-            Err(mqtt_error) => logger.log(
-                LogLevel::Error,
-                format_string::show(
-                    &mut log_buffer,
-                    format_args!("Error connecting to MQTT Broker: {:?}", mqtt_error),
-                )
-                .unwrap(),
-            ),
-        }
-
-        loop {
-            while !CHANNEL.is_empty() {
-                let message = CHANNEL.receive().await;
-                let serialized_message =
-                    serde_json_core::to_string::<U512, ButtonMqttMessage>(&message).unwrap();
-
-                mqtt_client
-                    .send_message(
-                        message.header.topic.as_str(),
-                        serialized_message.as_bytes(),
-                        true,
-                    )
-                    .await;
-            }
-            Timer::after(Duration::from_millis(1000)).await;
-        }
+        CHANNEL
+            .send(ButtonMqttMessage {
+                header: MQTTMessage {
+                    topic: MqttTopics::to_string(&MqttTopics::Acceleration),
+                    task_id: 1,
+                },
+                status: false,
+            })
+            .await;
+        Timer::after(Duration::from_millis(1000)).await;
     }
 }

@@ -1,15 +1,29 @@
 use async_trait::async_trait;
-use bytes::Bytes;
+use colored::Colorize;
 use mqrstt::{
     new_tokio,
     packets::{self, Packet},
     tokio::NetworkStatus,
     AsyncEventHandler, ConnectOptions, MqttClient,
 };
+use serde::{Deserialize, Serialize};
+use serde_json;
 use tokio::time::Duration;
 
 pub struct PingPong {
     pub client: MqttClient,
+}
+
+#[derive(Serialize, Deserialize)]
+struct MQTTMessage {
+    topic: String,
+    task_id: u8,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ButtonMqttMessage {
+    header: MQTTMessage,
+    status: bool,
 }
 
 #[async_trait]
@@ -19,12 +33,13 @@ impl AsyncEventHandler for PingPong {
         match event {
             Packet::Publish(p) => {
                 if let Ok(payload) = String::from_utf8(p.payload.to_vec()) {
-                    if payload.to_lowercase().contains("ping") {
-                        self.client
-                            .publish("reply", p.qos, p.retain, Bytes::from_static(b"pong"))
-                            .await
-                            .unwrap();
-                        println!("Received Ping, Send pong!");
+                    let message: ButtonMqttMessage = serde_json::from_str(&payload).unwrap();
+                    if message.header.task_id == 1 {
+                        println!("{}", "Ping from main event loop".yellow());
+                    } else if message.header.task_id == 0 {
+                        println!("Button pressed: {}", message.status);
+                    } else if message.header.task_id == 2 {
+                        println!("{}", "Ping from five second loop".green());
                     }
                 }
             }
@@ -38,9 +53,7 @@ impl AsyncEventHandler for PingPong {
 
 #[tokio::main]
 async fn main() {
-    let mut options = ConnectOptions::new("TokioTcpPingPongExample".to_string());
-    options.username = Some("user1".to_string());
-    options.password = Some("admin".to_string());
+    let options = ConnectOptions::new("rust-client".to_string());
 
     let (mut network, client) = new_tokio(options);
 
@@ -54,7 +67,10 @@ async fn main() {
 
     network.connect(stream, &mut pingpong).await.unwrap();
 
-    client.subscribe("command_handler").await.unwrap();
+    client
+        .subscribe("hyped/cart_2024/navigation/acceleration")
+        .await
+        .unwrap();
 
     let (n, _) = tokio::join!(
         async {
@@ -66,7 +82,7 @@ async fn main() {
             }
         },
         async {
-            tokio::time::sleep(Duration::from_secs(30)).await;
+            tokio::time::sleep(Duration::from_secs(300)).await;
             client.disconnect().await.unwrap();
         }
     );

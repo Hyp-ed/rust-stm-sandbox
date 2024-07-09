@@ -68,4 +68,37 @@ impl<'a, T: embedded_io_async::Read + embedded_io_async::Write, R: rand_core::Rn
             },
         }
     }
+
+    pub async fn subscribe(&mut self, topic: &str) {
+        match self.client.subscribe_to_topic(topic).await {
+            Ok(()) => {}
+            Err(mqtt_error) => match mqtt_error {
+                ReasonCode::NetworkError => {
+                    info!("MQTT Network Error");
+                }
+                _ => {
+                    warn!("Other MQTT Error: {:?}", mqtt_error);
+                }
+            },
+        }
+    }
+
+    pub async fn receive_message(&mut self) -> Result<&str, ReasonCode> {
+        match self.client.receive_message().await {
+            Ok((_topic, payload)) => {
+                let payload_str = core::str::from_utf8(payload).unwrap();
+                Ok(payload_str)
+            }
+            Err(mqtt_error) => match mqtt_error {
+                ReasonCode::NetworkError => {
+                    info!("MQTT Network Error");
+                    return Err(ReasonCode::NetworkError);
+                }
+                _ => {
+                    warn!("Other MQTT Error: {:?}", mqtt_error);
+                    return Err(mqtt_error);
+                }
+            },
+        }
+    }
 }
