@@ -83,11 +83,11 @@ impl<'a, T: embedded_io_async::Read + embedded_io_async::Write, R: rand_core::Rn
         }
     }
 
-    pub async fn receive_message(&mut self) -> Result<&str, ReasonCode> {
+    pub async fn receive_message(&mut self) -> Result<(&str, &str), ReasonCode> {
         match self.client.receive_message().await {
-            Ok((_topic, payload)) => {
+            Ok((topic, payload)) => {
                 let payload_str = core::str::from_utf8(payload).unwrap();
-                Ok(payload_str)
+                Ok((topic, payload_str))
             }
             Err(mqtt_error) => match mqtt_error {
                 ReasonCode::NetworkError => {
