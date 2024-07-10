@@ -29,21 +29,18 @@ pub fn initialise_mqtt_config() -> ClientConfig<'static, 5, CountingRng> {
 impl<'a, T: embedded_io_async::Read + embedded_io_async::Write, R: rand_core::RngCore>
     HypedMqttClient<'a, T, R>
 {
-    pub async fn connect_to_broker(&mut self) -> Result<(), ReasonCode> {
+    pub async fn connect_to_broker(&mut self) {
         match self.client.connect_to_broker().await {
             Ok(()) => {}
             Err(mqtt_error) => match mqtt_error {
                 ReasonCode::NetworkError => {
                     info!("MQTT Network Error");
-                    return Err(ReasonCode::NetworkError);
                 }
                 _ => {
                     warn!("Other MQTT Error: {:?}", mqtt_error);
-                    return Err(mqtt_error);
                 }
             },
         }
-        Ok(())
     }
 
     pub async fn send_message(&mut self, topic: &str, message: &[u8], retain: bool) {
