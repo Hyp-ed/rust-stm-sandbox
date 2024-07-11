@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use colored::Colorize;
+use hyped_core::{mqtt::ButtonMqttMessage, mqtt_topics::MqttTopics};
 use mqrstt::{
     new_tokio,
     packets::{self, Packet},
@@ -14,18 +15,6 @@ pub struct PingPong {
     pub client: MqttClient,
 }
 
-#[derive(Serialize, Deserialize)]
-struct MQTTMessage {
-    topic: String,
-    task_id: u8,
-}
-
-#[derive(Serialize, Deserialize)]
-struct ButtonMqttMessage {
-    header: MQTTMessage,
-    status: bool,
-}
-
 #[async_trait]
 impl AsyncEventHandler for PingPong {
     // Handlers only get INCOMING packets. This can change later.
@@ -34,11 +23,11 @@ impl AsyncEventHandler for PingPong {
             Packet::Publish(p) => {
                 if let Ok(payload) = String::from_utf8(p.payload.to_vec()) {
                     let message: ButtonMqttMessage = serde_json::from_str(&payload).unwrap();
-                    if message.header.task_id == 1 {
+                    if message.task_id == 1 {
                         println!("{}", "Ping from main event loop".yellow());
-                    } else if message.header.task_id == 0 {
+                    } else if message.task_id == 0 {
                         println!("Button pressed: {}", message.status);
-                    } else if message.header.task_id == 2 {
+                    } else if message.task_id == 2 {
                         println!("{}", "Ping from five second loop".green());
                     }
                 }
@@ -68,7 +57,7 @@ async fn main() {
     network.connect(stream, &mut pingpong).await.unwrap();
 
     client
-        .subscribe("hyped/cart_2024/navigation/acceleration")
+        .subscribe(MqttTopics::to_string(&MqttTopics::Acceleration))
         .await
         .unwrap();
 
@@ -82,7 +71,7 @@ async fn main() {
             }
         },
         async {
-            tokio::time::sleep(Duration::from_secs(300)).await;
+            tokio::time::sleep(Duration::from_secs(6000)).await;
             client.disconnect().await.unwrap();
         }
     );

@@ -1,9 +1,30 @@
 use defmt::*;
+#[cfg(not(feature = "std"))]
+use heapless::String;
 use rust_mqtt::{
     client::{client::MqttClient, client_config::ClientConfig},
     packet::v5::reason_codes::ReasonCode,
     utils::rng_generator::CountingRng,
 };
+use serde::{Deserialize, Serialize};
+
+#[cfg(not(feature = "std"))]
+pub struct MqttMessage {
+    pub topic: String<48>,
+    pub payload: String<512>,
+}
+
+#[cfg(feature = "std")]
+pub struct MqttMessage {
+    pub topic: String,
+    pub payload: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ButtonMqttMessage {
+    pub task_id: u8,
+    pub status: bool,
+}
 
 pub struct HypedMqttClient<
     'a,

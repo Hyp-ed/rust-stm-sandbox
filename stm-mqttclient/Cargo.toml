@@ -35,5 +35,7 @@ serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde-json-core = "0.1.0"
 typenum = "1.17.0"
 
+hyped_core = { path = "../hyped_core"}
+
 [profile.release]
 debug = 2

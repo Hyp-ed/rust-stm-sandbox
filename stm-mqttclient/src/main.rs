@@ -26,32 +26,18 @@ use rust_mqtt::{
     client::{client::MqttClient, client_config::ClientConfig},
     utils::rng_generator::CountingRng,
 };
-use serde::*;
 use typenum::consts::*;
 
-mod hyped_core;
-use hyped_core::{format_string, logger::LogLevel, mqtt};
-
 use hyped_core::{
-    mqtt::{initialise_mqtt_config, HypedMqttClient},
+    format_string,
+    logger::LogLevel,
+    mqtt::{initialise_mqtt_config, ButtonMqttMessage, HypedMqttClient, MqttMessage},
     mqtt_topics::MqttTopics,
 };
 
 bind_interrupts!(struct Irqs {
     ETH => eth::InterruptHandler;
 });
-
-// Define a tuple type for topic, payload
-struct MqttMessage {
-    topic: String<48>,
-    payload: String<512>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct ButtonMqttMessage {
-    task_id: u8,
-    status: bool,
-}
 
 static SEND_CHANNEL: Channel<ThreadModeRawMutex, MqttMessage, 128> = Channel::new();
 
@@ -176,7 +162,7 @@ async fn mqtt_recv_task(stack: &'static Stack<Ethernet<'static, ETH, GenericSMI>
     let mut rx_buffer: [u8; 4096] = [0; 4096];
     let mut tx_buffer: [u8; 4096] = [0; 4096];
     let mut socket = TcpSocket::new(&stack, &mut rx_buffer, &mut tx_buffer);
-    socket.set_timeout(Some(embassy_time::Duration::from_secs(300)));
+    socket.set_timeout(Some(embassy_time::Duration::from_secs(600)));
     info!("Connecting...");
     match socket
         .connect((Ipv4Address::new(169, 254, 195, 141), 1883))
@@ -234,6 +220,9 @@ async fn mqtt_recv_task(stack: &'static Stack<Ethernet<'static, ETH, GenericSMI>
                 .await
             }
             Err(err) => {
+                if err == rust_mqtt::packet::v5::reason_codes::ReasonCode::NetworkError {
+                    break;
+                }
                 log(
                     LogLevel::Error,
                     format_string::show(
